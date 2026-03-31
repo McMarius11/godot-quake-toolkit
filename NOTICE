@@ -1,0 +1,29 @@
+# Godot Quake Toolkit — Legal Notice
+
+## Original Work
+This project is an original implementation built on the Godot Engine (MIT License).
+All GDScript source code in this repository is original work, not derived from or
+based on any GPL-licensed source code.
+
+## Gameplay Reference
+Gameplay parameters (entity properties, physics constants, animation timing) are
+based on observation of Quake 1 singleplayer behavior. Game mechanics and numeric
+values are unprotectable game design elements under copyright law.
+
+## File Format Readers
+The BSP29, MDL (IDPO), SPR (IDSP), PAK (PACK), and WAD2 readers implement
+publicly documented binary file format specifications. These format specifications
+are factual descriptions not subject to copyright protection.
+
+## Runtime Asset Loading
+This software does not bundle any proprietary game assets. Users must provide
+their own Quake 1 data files (id1/ directory) for Quake compatibility mode.
+
+## Third-Party Components
+- Godot Engine: MIT License (https://godotengine.org/license)
+- FuncGodot: MIT License (https://github.com/func-godot/func_godot_plugin)
+- LibreQuake assets (if bundled): BSD 3-Clause License (https://github.com/lavenderdotpet/LibreQuake)
+
+## Color Palette
+The 256-color palette used for decoding legacy texture formats is a functional
+data table required for format compatibility, not creative expression.
