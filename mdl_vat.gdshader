@@ -1,5 +1,5 @@
-# SPDX-License-Identifier: MIT
-# Copyright (c) 2026 McMarius11
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 McMarius11
 shader_type spatial;
 render_mode cull_back, unshaded;
 
