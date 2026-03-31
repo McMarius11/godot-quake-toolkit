@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 McMarius11
 shader_type spatial;
-render_mode cull_back, unshaded;
+// cull_disabled: matches Quake — low-poly MDL models have edge-on triangles
+// that flip between front/back facing during rotation, causing visual twist.
+render_mode cull_disabled, unshaded;
 
 // Albedo texture (original MDL skin)
 uniform sampler2D albedo_tex : source_color, filter_nearest;
