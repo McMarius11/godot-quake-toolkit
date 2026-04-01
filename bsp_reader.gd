@@ -810,7 +810,7 @@ func _build_model_mesh(model_idx: int) -> MeshInstance3D:
 					var lt: float = (v - lm_info.texmins_t) / 16.0
 					surf.uv2s.append(Vector2(
 						(float(lm_info.atlas_x) + ls + 0.5) / float(cur_atlas_w),
-						(float(lm_info.atlas_y) + lt + 0.5) / float(cur_atlas_w)
+						(float(lm_info.atlas_y) + lt + 0.5) / float(cur_atlas_w)  # Atlas is always square
 					))
 				else:
 					surf.uv2s.append(cur_safe_uv)
@@ -1245,6 +1245,7 @@ func _build_lightmap_atlas(model_idx: int, animated_set: Dictionary = {}, animat
 		if info.lm_width <= 0 or info.lm_height <= 0:
 			continue
 		if info.lm_width > 64 or info.lm_height > 64:
+			push_warning("BSP: Lightmap too large (%dx%d) for face %d, skipping" % [info.lm_width, info.lm_height, fi])
 			continue
 
 		face_infos[fi] = info
@@ -1744,9 +1745,10 @@ func _miptex_to_image_texture(mt: BSPMiptex) -> ImageTexture:
 
 	for i in pixel_count:
 		var palette_idx: int = mt.pixels[i]
-		var r: int = _quake_palette[palette_idx * 3]
-		var g: int = _quake_palette[palette_idx * 3 + 1]
-		var b: int = _quake_palette[palette_idx * 3 + 2]
+		var pi3: int = palette_idx * 3
+		var r: int = _quake_palette[pi3] if pi3 + 2 < _quake_palette.size() else 0
+		var g: int = _quake_palette[pi3 + 1] if pi3 + 2 < _quake_palette.size() else 0
+		var b: int = _quake_palette[pi3 + 2] if pi3 + 2 < _quake_palette.size() else 0
 		var x: int = i % mt.width
 		@warning_ignore("INTEGER_DIVISION")
 		var y: int = i / mt.width
@@ -2057,18 +2059,20 @@ func _split_sky_from_miptex(tex_name: String) -> Dictionary:
 					for x in 128:
 						# Right half = background (solid)
 						var back_idx: int = mt.pixels[y * mt.width + x + 128]
-						var br: int = _quake_palette[back_idx * 3]
-						var bg: int = _quake_palette[back_idx * 3 + 1]
-						var bb: int = _quake_palette[back_idx * 3 + 2]
+						var bi3: int = back_idx * 3
+						var br: int = _quake_palette[bi3] if bi3 + 2 < _quake_palette.size() else 0
+						var bg: int = _quake_palette[bi3 + 1] if bi3 + 2 < _quake_palette.size() else 0
+						var bb: int = _quake_palette[bi3 + 2] if bi3 + 2 < _quake_palette.size() else 0
 						back_img.set_pixel(x, y, Color8(br, bg, bb))
 						# Left half = foreground (index 0 = transparent)
 						var front_idx: int = mt.pixels[y * mt.width + x]
 						if front_idx == 0:
 							front_img.set_pixel(x, y, Color(0, 0, 0, 0))
 						else:
-							var fr: int = _quake_palette[front_idx * 3]
-							var fg: int = _quake_palette[front_idx * 3 + 1]
-							var fb: int = _quake_palette[front_idx * 3 + 2]
+							var fi3: int = front_idx * 3
+							var fr: int = _quake_palette[fi3] if fi3 + 2 < _quake_palette.size() else 0
+							var fg: int = _quake_palette[fi3 + 1] if fi3 + 2 < _quake_palette.size() else 0
+							var fb: int = _quake_palette[fi3 + 2] if fi3 + 2 < _quake_palette.size() else 0
 							front_img.set_pixel(x, y, Color8(fr, fg, fb))
 				return {
 					"back": ImageTexture.create_from_image(back_img),
