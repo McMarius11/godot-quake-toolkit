@@ -192,6 +192,16 @@ static func q2g(v: Vector3) -> Vector3:
 	return Vector3(v.x, v.z, -v.y) * SCALE
 
 
+## Get the AABB center in Quake coordinates for a brush model.
+## Used to center brush entity geometry at the node origin so that
+## moving the node (e.g. func_door) moves the geometry correctly.
+func _get_model_center_quake(model_idx: int) -> Vector3:
+	if model_idx <= 0 or model_idx >= _models.size():
+		return Vector3.ZERO
+	var model := _models[model_idx]
+	return (model.mins + model.maxs) * 0.5
+
+
 # --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
@@ -233,6 +243,9 @@ func read_bsp(path: String) -> Node3D:
 	_read_vis(f)
 
 	f.close()
+
+	# Pre-populate texture directory cache to avoid frame hitch on first lookup
+	_populate_texture_dir_cache()
 
 	# Build scene tree
 	var root := Node3D.new()
@@ -690,6 +703,10 @@ func _build_model_mesh(model_idx: int) -> MeshInstance3D:
 
 	var model := _models[model_idx]
 
+	# For brush entities (model > 0), center geometry at AABB midpoint
+	# so the node position can be used to move the entity correctly.
+	var center_offset: Vector3 = _get_model_center_quake(model_idx)
+
 	# Phase 1: Build ONE combined atlas, then split animated faces into a second small atlas
 	var face_lm: Dictionary = {}
 	var static_atlas_tex: ImageTexture = null
@@ -798,9 +815,10 @@ func _build_model_mesh(model_idx: int) -> MeshInstance3D:
 		for i in range(1, face_verts.size() - 1):
 			var tri_verts: Array[Vector3] = [face_verts[0], face_verts[i], face_verts[i + 1]]
 			for v_quake in tri_verts:
-				surf.verts.append(q2g(v_quake))
+				surf.verts.append(q2g(v_quake - center_offset))
 				surf.normals.append(godot_normal)
 
+				# UVs use original world-space coordinates (not centered)
 				var u: float = v_quake.dot(texinfo.s_vec) + texinfo.s_offset
 				var v: float = v_quake.dot(texinfo.t_vec) + texinfo.t_offset
 				surf.uvs.append(Vector2(u / float(tex_width), v / float(tex_height)))
@@ -990,6 +1008,7 @@ func _build_model_collision_trimesh(model_idx: int) -> ConcavePolygonShape3D:
 		return null
 
 	var model := _models[model_idx]
+	var center_offset: Vector3 = _get_model_center_quake(model_idx)
 	var all_verts := PackedVector3Array()
 
 	for fi in range(model.firstface, model.firstface + model.numfaces):
@@ -1034,9 +1053,9 @@ func _build_model_collision_trimesh(model_idx: int) -> ConcavePolygonShape3D:
 
 		# Fan-triangulate
 		for i in range(1, face_verts.size() - 1):
-			all_verts.append(q2g(face_verts[0]))
-			all_verts.append(q2g(face_verts[i]))
-			all_verts.append(q2g(face_verts[i + 1]))
+			all_verts.append(q2g(face_verts[0] - center_offset))
+			all_verts.append(q2g(face_verts[i] - center_offset))
+			all_verts.append(q2g(face_verts[i + 1] - center_offset))
 
 	if all_verts.is_empty():
 		return null
@@ -1502,6 +1521,7 @@ func _blit_face_lightmap(atlas: Image, face_idx: int, info: FaceLightInfo) -> vo
 func _build_brush_entity_node(model_idx: int, _scene_root: Node3D) -> Node3D:
 	var _model := _models[model_idx]
 	var mesh_inst := _build_model_mesh(model_idx)
+	var center_godot: Vector3 = q2g(_get_model_center_quake(model_idx))
 
 	# Determine if this model is used by a trigger/area entity
 	var is_trigger := _is_model_trigger(model_idx)
@@ -1510,6 +1530,7 @@ func _build_brush_entity_node(model_idx: int, _scene_root: Node3D) -> Node3D:
 		# Triggers are Area3D with invisible collision
 		var area := Area3D.new()
 		area.name = "brush_model_%d" % model_idx
+		area.position = center_godot
 		area.collision_layer = 0
 		area.collision_mask = CollisionLayers.PLAYER
 
@@ -1526,6 +1547,7 @@ func _build_brush_entity_node(model_idx: int, _scene_root: Node3D) -> Node3D:
 		# Solid brush entity: AnimatableBody3D (for doors, plats, trains, etc.)
 		var body := AnimatableBody3D.new()
 		body.name = "brush_model_%d" % model_idx
+		body.position = center_godot
 		body.collision_layer = CollisionLayers.WORLD
 		body.collision_mask = 0
 
@@ -1559,6 +1581,7 @@ func _is_model_trigger(model_idx: int) -> bool:
 # --------------------------------------------------------------------------- #
 
 func _get_material(tex_name: String) -> Material:
+	tex_name = tex_name.to_lower()
 	if tex_name in _material_cache:
 		return _material_cache[tex_name]
 
@@ -1644,19 +1667,22 @@ func _load_texture(tex_name: String) -> Texture2D:
 	return result
 
 
-func _find_texture_case_insensitive(tex_name: String) -> Texture2D:
-	# Build directory cache on first use
-	if _texture_dir_cache.is_empty():
-		var dir := DirAccess.open("res://textures/lq/")
-		if dir:
-			dir.list_dir_begin()
-			var file_name := dir.get_next()
-			while file_name != "":
-				if file_name.ends_with(".png"):
-					var base := file_name.get_basename()
-					_texture_dir_cache[base.to_lower()] = "res://textures/lq/" + file_name
-				file_name = dir.get_next()
+func _populate_texture_dir_cache() -> void:
+	if not _texture_dir_cache.is_empty():
+		return
+	var dir := DirAccess.open("res://textures/lq/")
+	if dir:
+		dir.list_dir_begin()
+		var file_name := dir.get_next()
+		while file_name != "":
+			if file_name.ends_with(".png"):
+				var base := file_name.get_basename()
+				_texture_dir_cache[base.to_lower()] = "res://textures/lq/" + file_name
+			file_name = dir.get_next()
 
+
+func _find_texture_case_insensitive(tex_name: String) -> Texture2D:
+	_populate_texture_dir_cache()
 	var key := tex_name.to_lower()
 	if key in _texture_dir_cache:
 		return load(_texture_dir_cache[key])
@@ -1892,13 +1918,17 @@ static func _is_animated_texture(tex_name: String) -> bool:
 	return tex_name.length() > 2 and tex_name[0] == "+"
 
 
+var _anim_frames_cache: Dictionary = {}  # base_name (lowercase) -> Array[Texture2D]
+
 ## Collect all frames of an animated texture sequence.
 ## Given "+0button", returns [tex_for_+0, tex_for_+1, ...] (only existing frames).
 ## Uses embedded miptex data directly since each frame has unique pixel data.
 func _collect_anim_frames(tex_name: String) -> Array[Texture2D]:
 	if tex_name.length() < 3:
 		return []
-	var base := tex_name.substr(2)  # strip "+N" prefix
+	var base := tex_name.substr(2).to_lower()  # strip "+N" prefix, normalize case
+	if base in _anim_frames_cache:
+		return _anim_frames_cache[base]
 	var frames: Array[Texture2D] = []
 	# Quake uses +0 through +9 for normal animation
 	# Try embedded miptex first (fastest, no WAD/file I/O)
@@ -1929,10 +1959,12 @@ func _collect_anim_frames(tex_name: String) -> Array[Texture2D]:
 		var tex := _load_texture(tex_name)
 		if tex:
 			frames.append(tex)
+	_anim_frames_cache[base] = frames
 	return frames
 
 
 func _get_lightmapped_material(tex_name: String, atlas: ImageTexture) -> ShaderMaterial:
+	tex_name = tex_name.to_lower()
 	var mat := ShaderMaterial.new()
 
 	# Animated texture sequence (+0name, +1name, ...)
@@ -1981,6 +2013,7 @@ func _get_lightmapped_material(tex_name: String, atlas: ImageTexture) -> ShaderM
 ## Sky material — Quake-style scrolling two-layer dome projection.
 ## Quake sky textures are 256x128: right half = background, left half = foreground (index 0 = transparent).
 func _get_sky_material(tex_name: String) -> ShaderMaterial:
+	tex_name = tex_name.to_lower()
 	var cache_key := "sky:" + tex_name
 	if cache_key in _material_cache:
 		return _material_cache[cache_key]
